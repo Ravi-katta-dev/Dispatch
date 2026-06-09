@@ -6,7 +6,13 @@ import { signToken } from "../middleware/auth.js";
 const router = Router();
 
 function validEmail(e) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e));
+  if (typeof e !== "string") return false;
+  const email = e.trim();
+  if (!email || email.includes(" ")) return false;
+  const at = email.indexOf("@");
+  if (at <= 0 || email.lastIndexOf("@") !== at) return false;
+  const dot = email.lastIndexOf(".");
+  return dot > at + 1 && dot < email.length - 1;
 }
 
 // POST /api/auth/signup

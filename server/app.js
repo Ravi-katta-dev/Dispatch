@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import { attachUser }  from "./middleware/auth.js";
+import { globalLimiter, authLimiter, askLimiter } from "./middleware/rate-limit.js";
 import askRouter   from "./routes/ask.js";
 import feedRouter  from "./routes/feed.js";
 import toolsRouter from "./routes/tools.js";
@@ -18,6 +19,7 @@ await getDb();
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(globalLimiter);
 app.use(attachUser);
 
 app.get("/health", (_req, res) => res.json({
@@ -30,8 +32,8 @@ app.get("/health", (_req, res) => res.json({
   },
 }));
 
-app.use("/api/auth",  authRouter);
-app.use("/api/ask",   askRouter);
+app.use("/api/auth",  authLimiter, authRouter);
+app.use("/api/ask",   askLimiter, askRouter);
 app.use("/api/feed",  feedRouter);
 app.use("/api/tools", toolsRouter);
 

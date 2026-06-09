@@ -6,18 +6,6 @@ import { executeAgent, executeAgentStream } from "../agents/executor.js";
 const router = Router();
 const JWT_SECRET = () => process.env.JWT_SECRET || "dispatch-dev-secret-change-in-prod";
 
-const rateMap = new Map();
-function rateLimit(req, res, next) {
-  const key = req.user?.id ?? req.ip ?? "unknown";
-  const now = Date.now();
-  const entry = rateMap.get(key) || { count: 0, start: now };
-  if (now - entry.start > 60_000) { entry.count = 0; entry.start = now; }
-  entry.count++;
-  rateMap.set(key, entry);
-  if (entry.count > 10) return res.status(429).json({ error: "Too many requests" });
-  next();
-}
-
 // EventSource can't send headers — promote ?token= to req.user for SSE route
 function tokenFromQuery(req, _res, next) {
   if (!req.user && req.query.token) {
@@ -30,7 +18,7 @@ function tokenFromQuery(req, _res, next) {
 function sanitize(str) { return String(str ?? "").trim().slice(0, 500); }
 
 // POST /api/ask
-router.post("/", rateLimit, async (req, res) => {
+router.post("/", async (req, res) => {
   const query = sanitize(req.body?.query);
   if (!query) return res.status(400).json({ error: "query is required" });
   const agent = routeQuery(query);
@@ -44,7 +32,7 @@ router.post("/", rateLimit, async (req, res) => {
 });
 
 // GET /api/ask/stream?query=...&token=... (token optional, enables activity persistence)
-router.get("/stream", tokenFromQuery, rateLimit, async (req, res) => {
+router.get("/stream", tokenFromQuery, async (req, res) => {
   const query = sanitize(req.query?.query);
   if (!query) return res.status(400).json({ error: "query param required" });
 
