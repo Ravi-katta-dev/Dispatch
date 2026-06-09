@@ -8,11 +8,22 @@ const router = Router();
 function validEmail(e) {
   if (typeof e !== "string") return false;
   const email = e.trim();
-  if (!email || email.includes(" ")) return false;
+  if (!email || email.includes(" ") || email.length > 320) return false;
   const at = email.indexOf("@");
   if (at <= 0 || email.lastIndexOf("@") !== at) return false;
-  const dot = email.lastIndexOf(".");
-  return dot > at + 1 && dot < email.length - 1;
+
+  const local = email.slice(0, at);
+  const domain = email.slice(at + 1);
+  if (!local || !domain || local.length > 64 || domain.length > 255) return false;
+  if (local.startsWith(".") || local.endsWith(".") || local.includes("..")) return false;
+  if (!/^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+$/.test(local)) return false;
+
+  const labels = domain.split(".");
+  if (labels.length < 2) return false;
+  if (!labels.every((label) => /^[A-Za-z0-9-]+$/.test(label) && !label.startsWith("-") && !label.endsWith("-"))) {
+    return false;
+  }
+  return true;
 }
 
 // POST /api/auth/signup

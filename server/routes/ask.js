@@ -2,14 +2,14 @@ import { Router } from "express";
 import jsonwebtoken from "jsonwebtoken";
 import { routeQuery } from "../agents/definitions.js";
 import { executeAgent, executeAgentStream } from "../agents/executor.js";
+import { getJwtSecret } from "../middleware/auth.js";
 
 const router = Router();
-const JWT_SECRET = () => process.env.JWT_SECRET || "dispatch-dev-secret-change-in-prod";
 
 // EventSource can't send headers — promote ?token= to req.user for SSE route
 function tokenFromQuery(req, _res, next) {
   if (!req.user && req.query.token) {
-    try { req.user = jsonwebtoken.verify(req.query.token, JWT_SECRET()); }
+    try { req.user = jsonwebtoken.verify(req.query.token, getJwtSecret()); }
     catch { /* invalid token — guest */ }
   }
   next();
