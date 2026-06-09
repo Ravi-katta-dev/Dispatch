@@ -1,5 +1,6 @@
-import { gatherContext } from "../tools/mock.js";
+import { gatherContext } from "../tools/index.js";
 import { activityLog } from "../store/activity.js";
+import { insertActivity } from "../store/db.js";
 
 const API = "https://api.anthropic.com/v1/messages";
 
@@ -15,7 +16,15 @@ function buildUserMessage(query, context) {
   return `Tool data:\n${JSON.stringify(context, null, 2)}\n\nQuestion: "${query}"\n\nAnswer using the data above. Be specific — real numbers, real names. Max 150 words. No markdown headers.`;
 }
 
-export async function executeAgent(agent, query) {
+async function persist(entry, userId) {
+  // Write to both in-memory log (for fast reads) and SQLite (for persistence)
+  activityLog.push(entry);
+  await insertActivity({ ...entry, userId }).catch(e =>
+    console.warn("[db] insertActivity failed:", e.message)
+  );
+}
+
+export async function executeAgent(agent, query, userId = null) {
   const context = gatherContext(agent);
   const res = await fetch(API, {
     method: "POST",
@@ -24,7 +33,7 @@ export async function executeAgent(agent, query) {
       model: "claude-sonnet-4-20250514",
       max_tokens: 1000,
       system: agent.systemPrompt,
-      messages: [{ role: "user", content: buildUserMessage(query, context) }],
+      messages: [{ role: "user", content: buildUserMessage(query, await context) }],
     }),
   });
 
@@ -33,19 +42,26 @@ export async function executeAgent(agent, query) {
   const data = await res.json();
   const answer = data.content?.find(b => b.type === "text")?.text ?? "No response.";
 
-  const result = { agentId: agent.id, agentName: agent.name, icon: agent.icon, answer, toolsUsed: agent.tools, query, timestamp: new Date().toISOString() };
-  activityLog.push(result);
-  return result;
+  const entry = {
+    agentId: agent.id, agentName: agent.name, icon: agent.icon,
+    answer, toolsUsed: agent.tools, query,
+    timestamp: new Date().toISOString(),
+  };
+  await persist(entry, userId);
+  return entry;
 }
 
-export async function executeAgentStream(agent, query, res) {
-  const context = gatherContext(agent);
+export async function executeAgentStream(agent, query, res, userId = null) {
+  const context = await gatherContext(agent);
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
 
-  res.write(`event: agent\ndata: ${JSON.stringify({ agentId: agent.id, agentName: agent.name, icon: agent.icon, toolsUsed: agent.tools })}\n\n`);
+  res.write(`event: agent\ndata: ${JSON.stringify({
+    agentId: agent.id, agentName: agent.name,
+    icon: agent.icon, toolsUsed: agent.tools,
+  })}\n\n`);
 
   const upstream = await fetch(API, {
     method: "POST",
@@ -76,7 +92,6 @@ export async function executeAgentStream(agent, query, res) {
     buf += dec.decode(value, { stream: true });
     const lines = buf.split("\n");
     buf = lines.pop();
-
     for (const line of lines) {
       if (!line.startsWith("data: ")) continue;
       const raw = line.slice(6).trim();
@@ -91,6 +106,12 @@ export async function executeAgentStream(agent, query, res) {
     }
   }
 
-  activityLog.push({ agentId: agent.id, agentName: agent.name, icon: agent.icon, answer: fullText, toolsUsed: agent.tools, query, timestamp: new Date().toISOString() });
-  res.write(`event: done\ndata: ${JSON.stringify({ timestamp: new Date().toISOString() })}\n\n`);
+  const entry = {
+    agentId: agent.id, agentName: agent.name, icon: agent.icon,
+    answer: fullText, toolsUsed: agent.tools, query,
+    timestamp: new Date().toISOString(),
+  };
+  await persist(entry, userId);
+
+  res.write(`event: done\ndata: ${JSON.stringify({ timestamp: entry.timestamp })}\n\n`);
 }
